@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.1
+
+- Add `.github/workflows/publish.yml` — release-triggered npm publish
+  via OIDC trusted publishing, with tag/version sanity check.
+- Scrub leftover hard-coded benchmark connection details from
+  `bench/bench-aot.ts` and `examples/perry-aot-smoke.ts` (creds were
+  invalid; affected files are repo-only and not in the published
+  tarball).
+
 ## v0.1 — initial release
 
 Milestones M1 → M7, all shipped:
