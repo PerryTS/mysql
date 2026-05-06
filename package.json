@@ -20,10 +20,10 @@
     "mysql-native-password",
     "tls"
   ],
-  "homepage": "https://github.com/perryts/mysql",
+  "homepage": "https://github.com/PerryTS/mysql",
   "repository": {
     "type": "git",
-    "url": "https://github.com/perryts/mysql.git"
+    "url": "https://github.com/PerryTS/mysql.git"
   },
   "author": "Skelpo",
   "engines": {

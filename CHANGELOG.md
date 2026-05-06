@@ -4,6 +4,10 @@
 
 - Add `.github/workflows/publish.yml` — release-triggered npm publish
   via OIDC trusted publishing, with tag/version sanity check.
+- Restore canonical `PerryTS` casing on the GitHub repository URL in
+  `package.json` (npm provenance verification is case-sensitive).
+- README: add headline benchmark numbers vs `mysql2` and Perry AOT
+  (sourced from `bench/RESULTS.md`).
 - Scrub leftover hard-coded benchmark connection details from
   `bench/bench-aot.ts` and `examples/perry-aot-smoke.ts` (creds were
   invalid; affected files are repo-only and not in the published

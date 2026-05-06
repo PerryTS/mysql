@@ -2,10 +2,10 @@
 
 Pure-TypeScript MySQL / MariaDB wire-protocol driver. Runs on Node.js and
 Bun, and ahead-of-time compiles to a native binary via
-[Perry](https://github.com/perryts/perry) (LLVM). Zero native dependencies.
+[Perry](https://github.com/PerryTS/perry) (LLVM). Zero native dependencies.
 
 Sibling package of
-[@perryts/postgres](https://github.com/perryts/postgres).
+[@perryts/postgres](https://github.com/PerryTS/postgres).
 
 ## Status
 
@@ -55,6 +55,29 @@ bun run test:real    # docker MySQL 8 + MariaDB 11 integration matrix
 ```
 
 ## Benchmarks
+
+Headlines from [bench/RESULTS.md](bench/RESULTS.md) (MySQL 8.0.45 over WAN,
+30-50 iterations, median ms per query):
+
+| Workload | Bun + @perryts/mysql | Bun + mysql2 | Node + @perryts/mysql | Node + mysql2 | Perry AOT + @perryts/mysql |
+|---|---:|---:|---:|---:|---:|
+| `SELECT 1` (text)        | **96.6** | 485.8 | **84.1** | 80.5 | **67.0** |
+| `SELECT ? AS v` (prep)   | **69.3** | 181.0 | 89.7 | **68.6** | **80.0** |
+| `SELECT * LIMIT 1000`    | **96.1** | 112.8 | **113.9** | 99.2 | 122.5 |
+| `SELECT * LIMIT 10000`   | **330.4** | 457.9 | **567.8** | 475.9 | — |
+
+- **5-7× faster than `mysql2` under Bun** on small queries (`mysql2`'s
+  warm-up under Bun is sub-optimal; this driver doesn't have that
+  cliff).
+- **Comparable to `mysql2` under Node** at the median across all
+  workloads — within 20% on every row.
+- **Perry AOT wins `SELECT 1` outright** at 32 ms min, brushing the
+  WAN floor of ~30 ms.
+- **Best median on 10k-row results under Bun** (330 ms vs `mysql2`'s
+  458 ms), though Bun has a long p95 tail driven by GC on large row
+  objects — see notes in `bench/RESULTS.md`.
+
+### Reproducing
 
 ```sh
 (cd bench && bun install)  # pulls mysql2 / mysql into bench/node_modules only
