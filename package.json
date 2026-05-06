@@ -1,0 +1,60 @@
+{
+  "name": "@perryts/mysql",
+  "version": "0.1.0",
+  "description": "Pure-TypeScript MySQL/MariaDB wire-protocol driver. Runs on Node.js and Bun, and compiles to a native binary via Perry (LLVM). Zero native dependencies.",
+  "keywords": [
+    "mysql",
+    "mariadb",
+    "driver",
+    "database",
+    "perry",
+    "perryts",
+    "llvm",
+    "native",
+    "aot",
+    "wire-protocol",
+    "typescript",
+    "bun",
+    "nodejs",
+    "caching-sha2-password",
+    "mysql-native-password",
+    "tls"
+  ],
+  "homepage": "https://github.com/perryts/mysql",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/perryts/mysql.git"
+  },
+  "author": "Skelpo",
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "perry": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["src/", "dist/", "README.md", "LICENSE", "CLAUDE.md"],
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "test:unit": "bun test tests/unit",
+    "test:integration": "bun test tests/integration",
+    "test:tls:node": "tsx --test --test-reporter=spec --test-timeout=15000 tests-node/tls-node-tests.ts",
+    "test:real": "bash scripts/test-real.sh",
+    "verify": "bash scripts/verify.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "latest",
+    "tsx": "^4.21.0",
+    "typescript": "^5.4"
+  }
+}

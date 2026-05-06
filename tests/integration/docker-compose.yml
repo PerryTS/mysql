@@ -1,0 +1,55 @@
+version: "3.8"
+
+# Spin up MySQL 8 + MariaDB 11 for the integration test matrix.
+# Usage:
+#   docker compose -f tests/integration/docker-compose.yml up -d
+#   MYSQL_HOST=127.0.0.1 MYSQL_TCP_PORT=33306 bun test tests/integration
+#   MARIADB_HOST=127.0.0.1 MARIADB_TCP_PORT=33307 bun test tests/integration
+#
+# Users provisioned for per-plugin testing:
+#   native_user / nativepw              (mysql_native_password)
+#   caching_user / cachingpw            (caching_sha2_password, MySQL 8 only)
+#   ed25519_user / ed25519pw            (client_ed25519, MariaDB only)
+#
+# Ports are shifted (+30000) to avoid colliding with any locally-running
+# MySQL / MariaDB.
+
+services:
+  mysql8:
+    image: mysql:8.3
+    container_name: perry-mysql8
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: perry_test
+    ports:
+      - "33306:3306"
+    command: >
+      --default-authentication-plugin=caching_sha2_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - ./init-mysql8.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpw"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mariadb11:
+    image: mariadb:11.4
+    container_name: perry-mariadb11
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpw
+      MARIADB_DATABASE: perry_test
+    ports:
+      - "33307:3306"
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_general_ci
+    volumes:
+      - ./init-mariadb11.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpw"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
