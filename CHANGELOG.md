@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.3
+
+- Fix the Perry path of `transport/net-socket.ts::openSocket` to call
+  `net.createConnection(port, host)` matching Node's documented
+  positional signature. The pre-fix call passed `(host, port)` based
+  on a mistaken assertion in the file's own header comment that Perry
+  used a different order — Perry has always matched Node's
+  `(port, host)` (see `crates/perry-codegen/src/lower_call.rs` in the
+  perry tree). Under the wrong order Perry coerced the host string to
+  a port (NaN) and the port number to a host pointer, returning an
+  invalid socket handle that silently no-op'd through every subsequent
+  `sock.on(...)` registration — `await connect(...)` then never
+  resolved against any MySQL server. Header comment rewritten to
+  reflect Perry's actual `(port, host)` contract. PerryTS/perry#536.
+- The Node.js code path is unchanged — Node accepts the object form
+  `({ host, port })` which the driver already used.
+
 ## v0.1.2
 
 - Fix binary decoders for `DATE`, `DATETIME`/`TIMESTAMP`, and `TIME`

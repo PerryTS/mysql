@@ -1,9 +1,8 @@
 // Cross-environment socket adapter. Perry and Node/Bun both ship a
-// Node-compatible `net` module, but `createConnection` has slightly
-// different signatures:
-//
-//   - Perry (perry-stdlib):  net.createConnection(host, port)
-//   - Node (node:net):       net.createConnection({ host, port })
+// Node-compatible `net` module. Both accept the positional
+// `(port, host)` form (matching Node's documented signature
+// `net.createConnection(port[, host][, connectListener])`); Node
+// additionally accepts the object form `({ host, port })`.
 //
 // This file is the only place in the driver that cares. Everything else
 // consumes the returned `Socket` interface.
@@ -52,5 +51,11 @@ export function openSocket(host: string, port: number): Socket {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return (net as any).createConnection({ host: host, port: port }) as Socket;
     }
-    return net.createConnection(host as never, port as never) as unknown as Socket;
+    // Perry positional signature is `(port, host)` per Node's documented
+    // `net.createConnection(port[, host])`. Pre-fix this called
+    // `(host, port)` — perry coerced the host string to a port (NaN)
+    // and the port number to a host pointer, returning an invalid
+    // socket handle that silently no-op'd the rest of the connection
+    // lifecycle. PerryTS/perry#536.
+    return net.createConnection(port as never, host as never) as unknown as Socket;
 }
