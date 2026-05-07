@@ -51,11 +51,10 @@ export function decodeDateText(buf: Buffer): MyDate {
 }
 
 export function decodeDateBinary(buf: Buffer): MyDate {
-    const cur = new BufferCursor(buf);
-    const len = cur.readUInt8();
-    if (len === 0) {
+    if (buf.length === 0) {
         return makeMyDate(0, 0, 0, '0000-00-00');
     }
+    const cur = new BufferCursor(buf);
     const y = cur.readUInt16LE();
     const m = cur.readUInt8();
     const d = cur.readUInt8();
@@ -122,11 +121,18 @@ function parseDateTimeText(s: string): MyDateTime {
 }
 
 export function decodeDateTimeBinary(buf: Buffer): MyDateTime {
-    const cur = new BufferCursor(buf);
-    const len = cur.readUInt8();
+    // The buffer arrives as the raw column value (the upstream framing
+    // already consumed the lenenc length prefix in `decodeBinaryResultsetRow`).
+    // Discriminate on `buf.length`:
+    //   0  → zero datetime
+    //   4  → date only          (year(2) month(1) day(1))
+    //   7  → date + time        (… hour(1) min(1) sec(1))
+    //   11 → date + time + frac (… micros(4))
+    const len = buf.length;
     if (len === 0) {
         return makeMyDateTime(0, 0, 0, 0, 0, 0, 0, '0000-00-00 00:00:00');
     }
+    const cur = new BufferCursor(buf);
     const y = cur.readUInt16LE();
     const mo = cur.readUInt8();
     const d = cur.readUInt8();
@@ -221,11 +227,17 @@ function parseTimeText(s: string): MyTime {
 }
 
 export function decodeTimeBinary(buf: Buffer): MyTime {
-    const cur = new BufferCursor(buf);
-    const len = cur.readUInt8();
+    // Same fix as decodeDateTimeBinary: the buffer is the raw column value;
+    // the upstream framing already consumed the lenenc prefix. Discriminate
+    // on `buf.length`:
+    //   0  → zero
+    //   8  → sign(1) days(4) h(1) m(1) s(1)
+    //   12 → … micros(4)
+    const len = buf.length;
     if (len === 0) {
         return makeMyTime(false, 0, 0, 0, 0, 0);
     }
+    const cur = new BufferCursor(buf);
     const sign = cur.readUInt8();
     const days = cur.readUInt32LE();
     const h = cur.readUInt8();
