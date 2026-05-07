@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.2
+
+- Fix binary decoders for `DATE`, `DATETIME`/`TIMESTAMP`, and `TIME`
+  columns: the upstream resultset framing already consumes the
+  length-encoded prefix, so the codecs must discriminate on
+  `buf.length` instead of reading a leading length byte. Previously
+  this caused off-by-one parsing of the year and other fields on
+  binary-protocol rows.
+- `.gitignore`: minor housekeeping.
+
 ## v0.1.1
 
 - Add `.github/workflows/publish.yml` — release-triggered npm publish
