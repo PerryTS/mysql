@@ -1,6 +1,7 @@
 {
   "name": "@perryts/mysql",
-  "version": "0.1.3",
+  "version": "0.1.4",
+  "type": "module",
   "description": "Pure-TypeScript MySQL/MariaDB wire-protocol driver. Runs on Node.js and Bun, and compiles to a native binary via Perry (LLVM). Zero native dependencies.",
   "keywords": [
     "mysql",
@@ -42,7 +43,7 @@
   },
   "files": ["src/", "dist/", "README.md", "LICENSE", "CLAUDE.md"],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/fix-esm-imports.mjs",
     "test": "bun test",
     "test:unit": "bun test tests/unit",
     "test:integration": "bun test tests/integration",

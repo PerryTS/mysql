@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.4
+
+- Make the published package importable under Node's strict ESM loader.
+  `package.json` was missing `"type": "module"`, so Node parsed
+  `dist/*.js` as CommonJS and reported `does not provide an export
+  named 'createPool'` when consumers used `import { createPool } from
+  '@perryts/mysql'`. Compounding it, the compiled `dist/*.{js,d.ts}`
+  carried extensionless relative imports (`from './connection'`) that
+  Node strict ESM refuses to resolve.
+- Fix both: declare `"type": "module"` and add a post-build pass
+  (`scripts/fix-esm-imports.mjs`) that rewrites every relative import
+  in `dist/` to include an explicit `.js` extension. Source files stay
+  extensionless — only the compiled artifacts are patched.
+- Bun + Perry paths are unaffected; the failure was Node-strict-ESM only.
+
 ## v0.1.3
 
 - Fix the Perry path of `transport/net-socket.ts::openSocket` to call
