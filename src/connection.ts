@@ -235,6 +235,13 @@ interface ConnState {
     errorHandlers: Array<(e: Error) => void>;
     connection: Connection;
     dataListener: (chunk: Buffer) => void;
+    /** True → route writes through the deferred queue (Perry runtimes). */
+    deferWrites: boolean;
+    /** Outbound frames awaiting the next timer-tick flush (deferWrites only). */
+    writeQueue: Buffer[];
+    writeFlushScheduled: boolean;
+    /** Callbacks to run after the next queue flush hits the socket. */
+    afterWriteFlush: Array<() => void>;
     /** Cached handshake so we can finish it once TLS is negotiated. */
     pendingHandshake: {
         h: import('./protocol/decoder').HandshakeV10;
@@ -244,6 +251,55 @@ interface ConnState {
 
 let NEXT_CONN_ID = 1;
 const CONN_STATES = new Map<number, ConnState>();
+
+// ─── Deferred socket writes (PerryTS/perry#5021 workaround) ──────────────────
+//
+// Under a Perry-compiled Linux binary, `net.Socket.write()` issued from
+// inside a 'data' callback is silently dropped — no write(2) syscall is
+// emitted. Every server-driven frame this driver sends originates from
+// exactly that context: HandshakeResponse41 after the greeting, auth-switch
+// and AuthMoreData responses, COM_STMT_EXECUTE after PrepareOK, and the
+// LOCAL_INFILE terminator. Workaround: on Perry, queue outbound bytes and
+// flush them from a zero-delay timer, which runs outside the data dispatch.
+// Node/Bun keep the direct synchronous write. See PerryTS/mysql#2.
+
+let FORCE_DEFER_WRITES = false;
+
+/** Test hook: force the Perry deferred-write path under Node/Bun. */
+export function setForceDeferredWrites(v: boolean): void {
+    FORCE_DEFER_WRITES = v;
+}
+
+function socketWrite(st: ConnState, bytes: Buffer): void {
+    if (!st.deferWrites) {
+        st.sock.write(bytes);
+        return;
+    }
+    st.writeQueue.push(bytes);
+    if (!st.writeFlushScheduled) {
+        st.writeFlushScheduled = true;
+        const id = st.id;
+        setTimeout(() => { flushWriteQueue(id); }, 0);
+    }
+}
+
+function flushWriteQueue(id: number): void {
+    const st = CONN_STATES.get(id);
+    if (st === undefined) {
+        return;
+    }
+    st.writeFlushScheduled = false;
+    const q = st.writeQueue;
+    st.writeQueue = [];
+    for (let i = 0; i < q.length; i++) {
+        st.sock.write(q[i]);
+    }
+    const after = st.afterWriteFlush;
+    st.afterWriteFlush = [];
+    for (let i = 0; i < after.length; i++) {
+        after[i]();
+    }
+}
 
 // ─── Connection class ────────────────────────────────────────────────────────
 
@@ -397,6 +453,10 @@ export function connect(
             errorHandlers: [],
             connection: conn,
             dataListener: dataListener,
+            deferWrites: FORCE_DEFER_WRITES || !isNodeLike(),
+            writeQueue: [],
+            writeFlushScheduled: false,
+            afterWriteFlush: [],
             pendingHandshake: null,
         };
         // Silence unused-constant warnings for a few imports we'll use in later milestones.
@@ -505,7 +565,7 @@ function onSocketClose(id: number): void {
 function sendAuthFrame(st: ConnState, payload: Buffer): void {
     // Auth-phase packets preserve the seq id from the server's last packet + 1.
     const { bytes, nextSeq } = writePacket(st.nextSeq, payload);
-    st.sock.write(bytes);
+    socketWrite(st, bytes);
     st.nextSeq = nextSeq;
 }
 
@@ -513,7 +573,7 @@ function sendCommand(st: ConnState, payload: Buffer): void {
     // A new command resets the seq id to 0.
     st.nextSeq = 0;
     const { bytes, nextSeq } = writePacket(0, payload);
-    st.sock.write(bytes);
+    socketWrite(st, bytes);
     st.nextSeq = nextSeq;
 }
 
@@ -648,7 +708,14 @@ function handleHandshakeV10(id: number, payload: Buffer): void {
         const sslReq = writeSSLRequest(caps, maxPacketSize, charset);
         st.phase = 'ssl-upgrading';
         sendAuthFrame(st, sslReq);
-        runUpgrade(id);
+        if (st.deferWrites) {
+            // SSLRequest is sitting in the write queue. The TLS ClientHello
+            // must not reach the wire before it, so start the upgrade only
+            // after the queue has flushed.
+            st.afterWriteFlush.push(() => { runUpgrade(id); });
+        } else {
+            runUpgrade(id);
+        }
         return;
     }
     sendAuthResponseForPlugin(st, h);
@@ -1009,7 +1076,7 @@ function handleLocalInfileRequest(st: ConnState, payload: Buffer): void {
     // server then sends an ERR which we'll surface naturally.
     if (st.opts.localInfile !== 'allow-any') {
         const { bytes } = writePacket(st.nextSeq, Buffer.alloc(0));
-        st.sock.write(bytes);
+        socketWrite(st, bytes);
         st.nextSeq = (st.nextSeq + 1) & 0xFF;
         // Pre-fail: we know the server will ERR, but give a specific error now.
         failPending(st, new MyError({
@@ -1023,7 +1090,7 @@ function handleLocalInfileRequest(st: ConnState, payload: Buffer): void {
     // send an empty packet so the connection doesn't wedge, and let
     // the server ERR back.
     const { bytes } = writePacket(st.nextSeq, Buffer.alloc(0));
-    st.sock.write(bytes);
+    socketWrite(st, bytes);
     st.nextSeq = (st.nextSeq + 1) & 0xFF;
 }
 

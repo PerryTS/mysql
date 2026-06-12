@@ -80,6 +80,10 @@ Per the hone CLAUDE.md conventions:
   module-level `Map<id, State>` and use named module-level handlers.
 - No `Buffer[i]` bracket indexing — Perry's codegen doesn't lower it, the
   read returns undefined and scans walk off the end. Use `buf.readUInt8(i)`.
+- No `socket.write()` from inside a `'data'` handler — Perry on Linux
+  silently drops it (no write(2) syscall; PerryTS/perry#5021). All driver
+  writes must go through `socketWrite()` in `connection.ts`, which queues
+  and flushes from a zero-delay timer under Perry (sync write on Node/Bun).
 
 ## MySQL-specific gotchas
 

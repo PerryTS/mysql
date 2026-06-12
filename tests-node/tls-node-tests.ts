@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { connect } from '../src';
+import { setForceDeferredWrites } from '../src/connection';
 import { startMockServer, type MockServer } from '../tests/integration/mock-server';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -88,6 +89,45 @@ test('sslmode=verify-full rejects a self-signed cert', async () => {
             }),
         );
     } finally {
+        await server.close();
+        server = null;
+    }
+});
+
+test('sslmode=require with deferred writes (Perry path): SSLRequest flushes before ClientHello', async () => {
+    // PerryTS/mysql#2 workaround coverage: with deferred writes forced, the
+    // SSLRequest sits in the write queue when the TLS upgrade is requested.
+    // The afterWriteFlush hook must hold the upgrade back until the queue
+    // has flushed, or the ClientHello would precede the SSLRequest.
+    setForceDeferredWrites(true);
+    server = await startMockServer({
+        authMode: 'native',
+        password: 'secret',
+        expectedUser: 'alice',
+        tls: { cert: CERT_PEM, key: KEY_PEM },
+        selectOne: {
+            kind: 'resultset',
+            columns: [{ name: 'v' }],
+            rows: [{ cells: ['deferred-tls'] }],
+        },
+    });
+    try {
+        const c = await connect({
+            host: '127.0.0.1',
+            port: server.port,
+            user: 'alice',
+            password: 'secret',
+            database: '',
+            ssl: { mode: 'require' },
+        });
+        try {
+            const r = await c.query('SELECT 1');
+            assert.deepEqual(r.rows[0], { v: 'deferred-tls' });
+        } finally {
+            await c.close();
+        }
+    } finally {
+        setForceDeferredWrites(false);
         await server.close();
         server = null;
     }
