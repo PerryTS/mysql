@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.1.6
+
+- Fix #1: a `BIGINT` column read via the prepared (binary) protocol came
+  back as a JS `bigint` under the Perry-native binary (but `number` under
+  Node) even for small, in-range values like `1`. The stray `bigint` then
+  broke `JSON.stringify` / fast-json-stringify, surfacing auto-increment
+  ids as `null` in HTTP responses.
+- Root cause: the binary `LONGLONG` decoder coerced the in-range value with
+  `Number(bigint)` and compared bigint literals (`<= 9007199254740991n`).
+  Both route through Perry runtime intrinsics (`_js_to_numeric`, `_js_rel_le`)
+  that miscompiled on older Perry builds, leaving the value a `bigint`.
+- Fix: decode the in-range value with pure number-word arithmetic
+  (`hi * 2^32 + lo`) and number-literal comparisons — never `Number(bigint)`.
+  The combine is exact for `|value| ≤ 2^53`, so the result is `number` and
+  byte-for-byte identical to Node. Out-of-range values still return `bigint`
+  via `readBig*64LE` (that path was already correct). Robust regardless of
+  the Perry compiler version. Verified end-to-end on native Perry against a
+  live MySQL 8/9 server.
+
+## v0.1.5
+
+- Defer socket writes out of the `'data'` dispatch under Perry: Perry on
+  Linux silently drops a `socket.write()` issued from inside a `'data'`
+  handler (no `write(2)` syscall; PerryTS/perry#5021). All driver writes
+  now go through `socketWrite()` in `connection.ts`, which queues and
+  flushes from a zero-delay timer under Perry (sync write on Node/Bun).
+
 ## v0.1.4
 
 - Make the published package importable under Node's strict ESM loader.

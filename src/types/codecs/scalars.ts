@@ -122,15 +122,24 @@ export const LONGLONG_CODEC: MyCodec<LongLongValue> = {
         encode: (v) => Buffer.from(typeof v === 'bigint' ? v.toString() : String(v), 'utf8'),
     },
     binary: {
+        // Decode the in-range value with pure number-word arithmetic and
+        // number-literal comparisons — never via `Number(bigint)`. Perry's
+        // AOT miscompiles the bigint→number coercion (PerryTS/perry#1), so a
+        // value as small as `1` would surface as a `bigint` and break
+        // JSON.stringify. The two-word combine is exact for any |value| ≤
+        // 2^53, so the safe-integer branch matches Node byte-for-byte.
         decode: (buf, field): LongLongValue => {
+            const lo = buf.readUInt32LE(0);
             if (isUnsigned(field.flags)) {
-                const big = buf.readBigUInt64LE(0);
-                if (big <= 9007199254740991n) { return Number(big); }
-                return big;
+                const hi = buf.readUInt32LE(4);
+                const asNum = hi * 4294967296 + lo;
+                if (asNum <= 9007199254740991) { return asNum; }
+                return buf.readBigUInt64LE(0);
             }
-            const big = buf.readBigInt64LE(0);
-            if (big <= 9007199254740991n && big >= -9007199254740991n) { return Number(big); }
-            return big;
+            const hi = buf.readInt32LE(4);
+            const asNum = hi * 4294967296 + lo;
+            if (asNum <= 9007199254740991 && asNum >= -9007199254740991) { return asNum; }
+            return buf.readBigInt64LE(0);
         },
         encode: (v): EncodedParam => {
             const out = Buffer.alloc(8);

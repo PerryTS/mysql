@@ -109,6 +109,35 @@ test('LONGLONG binary: MIN/MAX signed int64 → bigint', () => {
     expect(decodeValue(field(MYSQL_TYPE_LONGLONG), FORMAT_BINARY, maxBuf)).toBe(9223372036854775807n);
 });
 
+test('LONGLONG binary: in-range value → number, not bigint (issue #1)', () => {
+    // A small AUTO_INCREMENT id (1) read via the prepared/binary protocol
+    // must come back as `number` on every runtime — `bigint` breaks
+    // JSON.stringify in HTTP services.
+    const buf = Buffer.alloc(8);
+    buf.writeBigInt64LE(1n, 0);
+    const result = decodeValue(field(MYSQL_TYPE_LONGLONG), FORMAT_BINARY, buf);
+    expect(typeof result).toBe('number');
+    expect(result).toBe(1);
+});
+
+test('LONGLONG binary: max safe integer stays number, +1 becomes bigint', () => {
+    const safeBuf = Buffer.alloc(8);
+    safeBuf.writeBigInt64LE(9007199254740991n, 0);
+    expect(decodeValue(field(MYSQL_TYPE_LONGLONG), FORMAT_BINARY, safeBuf)).toBe(9007199254740991);
+
+    const overBuf = Buffer.alloc(8);
+    overBuf.writeBigInt64LE(9007199254740992n, 0);
+    expect(typeof decodeValue(field(MYSQL_TYPE_LONGLONG), FORMAT_BINARY, overBuf)).toBe('bigint');
+});
+
+test('LONGLONG binary unsigned: in-range value → number', () => {
+    const buf = Buffer.alloc(8);
+    buf.writeBigUInt64LE(123456789n, 0);
+    const result = decodeValue(field(MYSQL_TYPE_LONGLONG, UNSIGNED_FLAG), FORMAT_BINARY, buf);
+    expect(typeof result).toBe('number');
+    expect(result).toBe(123456789);
+});
+
 test('YEAR binary: 2 bytes LE → number', () => {
     const buf = Buffer.alloc(2);
     buf.writeUInt16LE(2025, 0);
