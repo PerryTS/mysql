@@ -47,7 +47,7 @@ import {
 } from './protocol/decoder';
 import { MyError } from './error';
 import type { MyWarning } from './warnings';
-import { openSocket, isNodeLike, type Socket } from './transport/net-socket';
+import { openSocket, isNodeLike, isPerry, type Socket } from './transport/net-socket';
 import { upgradeToTls } from './transport/upgrade-tls';
 import { CLIENT_SSL } from './protocol/capabilities';
 import { sendKillQuery } from './cancel';
@@ -260,10 +260,23 @@ const CONN_STATES = new Map<number, ConnState>();
 // exactly that context: HandshakeResponse41 after the greeting, auth-switch
 // and AuthMoreData responses, COM_STMT_EXECUTE after PrepareOK, and the
 // LOCAL_INFILE terminator. Workaround: on Perry, queue outbound bytes and
-// flush them from a zero-delay timer, which runs outside the data dispatch.
-// Node/Bun keep the direct synchronous write. See PerryTS/mysql#2.
+// flush them from a timer that runs outside the data dispatch. Node/Bun
+// keep the direct synchronous write. See PerryTS/mysql#2.
+//
+// The flush is driven by a single shared `setInterval` pump rather than a
+// per-write `setTimeout(…, 0)`: under a Perry-native binary a zero-delay
+// `setTimeout` scheduled from inside a 'data' handler never fires (the
+// HandshakeResponse41 stayed queued and MySQL timed out reading the
+// communication packet). `setInterval` does fire there. The pump runs only
+// while at least one connection has queued bytes and stops itself once all
+// queues drain; it is unref'd so it never keeps a Node/Bun event loop alive
+// on its own.
 
 let FORCE_DEFER_WRITES = false;
+
+/** Connection ids with bytes queued, awaiting the next pump tick. */
+let PENDING_FLUSH: number[] = [];
+let flushPump: ReturnType<typeof setInterval> | null = null;
 
 /** Test hook: force the Perry deferred-write path under Node/Bun. */
 export function setForceDeferredWrites(v: boolean): void {
@@ -276,10 +289,34 @@ function socketWrite(st: ConnState, bytes: Buffer): void {
         return;
     }
     st.writeQueue.push(bytes);
+    scheduleFlush(st);
+}
+
+function scheduleFlush(st: ConnState): void {
     if (!st.writeFlushScheduled) {
         st.writeFlushScheduled = true;
-        const id = st.id;
-        setTimeout(() => { flushWriteQueue(id); }, 0);
+        PENDING_FLUSH.push(st.id);
+    }
+    if (flushPump === null) {
+        flushPump = setInterval(runFlushPump, 0);
+        const timer = flushPump as unknown as { unref?: () => void };
+        if (typeof timer.unref === 'function') {
+            timer.unref();
+        }
+    }
+}
+
+function runFlushPump(): void {
+    const ids = PENDING_FLUSH;
+    PENDING_FLUSH = [];
+    for (let i = 0; i < ids.length; i++) {
+        flushWriteQueue(ids[i]);
+    }
+    // A flush callback may have queued more bytes (and re-pushed onto
+    // PENDING_FLUSH); keep pumping until everything has drained.
+    if (PENDING_FLUSH.length === 0 && flushPump !== null) {
+        clearInterval(flushPump);
+        flushPump = null;
     }
 }
 
@@ -453,7 +490,7 @@ export function connect(
             errorHandlers: [],
             connection: conn,
             dataListener: dataListener,
-            deferWrites: FORCE_DEFER_WRITES || !isNodeLike(),
+            deferWrites: FORCE_DEFER_WRITES || isPerry(),
             writeQueue: [],
             writeFlushScheduled: false,
             afterWriteFlush: [],

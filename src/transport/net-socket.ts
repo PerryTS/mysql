@@ -34,12 +34,30 @@ export interface Socket {
     upgradeToTLS?(servername: string, verify: 0 | 1): Promise<void>;
 }
 
-/** True when running under Node.js or Bun. */
-export function isNodeLike(): boolean {
-    const g = globalThis as { process?: { versions?: { node?: string } } };
+/**
+ * True when running under a Perry-compiled native binary.
+ *
+ * Perry mimics Node closely enough that `process.versions.node` is present
+ * (pinned to "22.0.0"), so it is NOT a usable Node discriminator — a Perry
+ * binary reports it too. The Perry runtime does inject its own version
+ * under `process.versions.perry`, so we detect Perry positively there and
+ * treat everything else as Node-like. See PerryTS/mysql#2.
+ */
+export function isPerry(): boolean {
+    const g = globalThis as { process?: { versions?: { perry?: string } } };
     return g.process !== undefined
         && g.process.versions !== undefined
-        && typeof g.process.versions.node === 'string';
+        && typeof g.process.versions.perry === 'string';
+}
+
+/**
+ * True when running under Node.js or Bun (i.e. not a Perry-compiled
+ * binary). Used to pick the Node object-form `createConnection`, the
+ * `tls.connect` upgrade path, and the synchronous write path — none of
+ * which apply under Perry.
+ */
+export function isNodeLike(): boolean {
+    return !isPerry();
 }
 
 /**

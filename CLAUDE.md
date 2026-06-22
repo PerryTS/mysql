@@ -83,7 +83,14 @@ Per the hone CLAUDE.md conventions:
 - No `socket.write()` from inside a `'data'` handler — Perry on Linux
   silently drops it (no write(2) syscall; PerryTS/perry#5021). All driver
   writes must go through `socketWrite()` in `connection.ts`, which queues
-  and flushes from a zero-delay timer under Perry (sync write on Node/Bun).
+  and flushes from a self-stopping, unref'd `setInterval` pump under Perry
+  (sync write on Node/Bun). A zero-delay `setTimeout` does NOT work here:
+  scheduled from inside a `'data'` handler it never fires on a Perry-native
+  binary (PerryTS/mysql#2) — use `setInterval`.
+- Detect a Perry runtime via `isPerry()` (`process.versions.perry` is a
+  string), NOT by the absence of `process.versions.node`: Perry pins
+  `process.versions.node = "22.0.0"`, so it looks like Node otherwise
+  (PerryTS/mysql#2).
 
 ## MySQL-specific gotchas
 
